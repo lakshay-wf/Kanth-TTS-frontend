@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Tracker</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e1dc; --head: #f0efea;
+    --accent: #2f5bd3; --accent-text: #ffffff; --pending: #fff3c4; --pending-line: #c99a06;
+    --ok: #1f8a54; --ok-text: #ffffff; --hover: #f3f2ee; --bad: #c8322b; --bad-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --text: #ecebe6; --muted: #9c9b95; --line: #33332f; --head: #262624;
+      --accent: #7c9cf5; --accent-text: #10172b; --pending: #4a3d0c; --pending-line: #e0b420;
+      --ok: #2fa86b; --ok-text: #0c1f15; --hover: #262624; --bad: #e5534b; --bad-text: #2a0b09;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 96px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  h1 { font-size: 22px; margin: 0; }
+  header a { color: var(--accent); font-size: 14px; }
+  .bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  input[type=search] { flex: 1; min-width: 180px; font: inherit; color: var(--text); background: var(--panel);
+                       border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .count { font-size: 13px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  th, td { border-bottom: 1px solid var(--line); padding: 0; text-align: left; }
+  th { background: var(--head); font-size: 13px; padding: 8px 12px; position: sticky; top: 0; z-index: 1; }
+  th.l, td.l { width: 22%; text-align: center; }
+  td.v { padding: 7px 12px; font-size: 14px; }
+  td.v .g { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  td.l button { width: 100%; height: 36px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+  td.l button:hover { background: var(--hover); }
+  td.l button.pending { background: var(--pending); color: var(--text); box-shadow: inset 0 0 0 2px var(--pending-line); }
+  td.l button.done { background: var(--ok); color: var(--ok-text); cursor: default; font-weight: 600; }
+  td.l button.rejected { background: var(--bad); color: var(--bad-text); font-weight: 600; }
+  tr.group td { background: var(--head); font-size: 12px; font-weight: 600; color: var(--muted); padding: 6px 12px; }
+  .footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); }
+  .footer div { max-width: 760px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .primary { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 10px 24px; cursor: pointer; background: var(--accent); color: var(--accent-text); }
+  .primary:disabled { opacity: .5; cursor: default; }
+  .ghost { font: inherit; font-size: 14px; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 8px; padding: 9px 14px; cursor: pointer; }
+  #msg { font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Voice Tracker</h1>
+    <a href="index.html">← back to the speech UI</a>
+  </header>
+  <div class="bar">
+    <input type="search" id="q" placeholder="Search voices…">
+    <span class="count" id="count"></span>
+  </div>
+  <table>
+    <thead><tr><th>Voice</th><th class="l">Hindi</th><th class="l">English</th><th class="l">Hinglish</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+<div class="footer"><div>
+  <button class="primary" id="done" disabled>Done</button>
+  <button class="ghost" id="undo" disabled>Clear selection</button>
+  <span id="msg">Click a cell: 1× = selected (yellow), 2× = rejected (red), 3× = clear. Done saves the yellow ones (green).
+    Red stays in this browser only, not in the file.</span>
+</div></div>
+
+<script src="config.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const API = (window.KANTH_API || "").replace(/\/+$/, "");   // backend address (config.js); "" = same server
+const LANGS = ["Hindi", "English", "Hinglish"];
+let approved = {}, pending = {};          // pending: {voice: Set(languages)}
+const RKEY = "kanth.tracker.rejected";    // rejected cells: this browser only (localStorage), never sent to the server
+let rejected = {};                        // {voice: [languages]}
+try { rejected = JSON.parse(localStorage.getItem(RKEY) || "{}"); } catch (e) { rejected = {}; }
+function isRejected(v, l) { return (rejected[v] || []).includes(l); }
+function setRejected(v, l, on) {
+  const s = new Set(rejected[v] || []); on ? s.add(l) : s.delete(l);
+  if (s.size) rejected[v] = LANGS.filter(x => s.has(x)); else delete rejected[v];
+  try { localStorage.setItem(RKEY, JSON.stringify(rejected)); } catch (e) {}
+}
+
+function nPending() { return Object.values(pending).reduce((a, s) => a + s.size, 0); }
+function refreshBar() {
+  const n = nPending(), total = Object.values(approved).reduce((a, l) => a + l.length, 0);
+  $("done").disabled = !n; $("undo").disabled = !n;
+  $("done").textContent = n ? `Done (${n})` : "Done";
+  const nrej = Object.values(rejected).reduce((a, l) => a + l.length, 0);
+  $("count").textContent = `${total} approved · ${Object.keys(approved).length} voices · ${nrej} rejected`;
+}
+
+function cell(voice, lang) {
+  const b = document.createElement("button");
+  const paint = () => {
+    const ok = (approved[voice] || []).includes(lang), p = pending[voice]?.has(lang), r = !ok && isRejected(voice, lang);
+    b.className = ok ? "done" : p ? "pending" : r ? "rejected" : "";
+    b.textContent = ok ? "✓ approved" : p ? "selected" : r ? "✗ rejected" : "";
+    b.title = ok ? "approved and saved" : p ? "click again to reject" : r ? "click to clear" : "click to select";
+  };
+  b.onclick = () => {                                              // blank -> selected -> rejected -> blank
+    if ((approved[voice] || []).includes(lang)) return;            // saved = permanent
+    const s = pending[voice] || (pending[voice] = new Set());
+    if (s.has(lang)) { s.delete(lang); setRejected(voice, lang, true); }
+    else if (isRejected(voice, lang)) setRejected(voice, lang, false);
+    else s.add(lang);
+    if (!s.size) delete pending[voice];
+    paint(); refreshBar();
+  };
+  b.paint = paint; paint();
+  return b;
+}
+
+function build(voices) {
+  let group = null;
+  for (const v of voices) {
+    if (v.group !== group) {
+      group = v.group;
+      const g = document.createElement("tr"); g.className = "group"; g.dataset.group = group;
+      const td = document.createElement("td"); td.colSpan = 4; td.textContent = group; g.append(td); $("rows").append(g);
+    }
+    const tr = document.createElement("tr"); tr.dataset.name = v.name.toLowerCase(); tr.dataset.group = group;
+    const name = document.createElement("td"); name.className = "v"; name.textContent = v.name;
+    const g = document.createElement("span"); g.className = "g"; g.textContent = v.gender; name.append(g);
+    tr.append(name);
+    for (const l of LANGS) { const td = document.createElement("td"); td.className = "l"; td.append(cell(v.name, l)); tr.append(td); }
+    $("rows").append(tr);
+  }
+}
+
+function filter() {
+  const q = $("q").value.trim().toLowerCase(), seen = new Set();
+  for (const tr of $("rows").querySelectorAll("tr:not(.group)")) {
+    const show = !q || tr.dataset.name.includes(q); tr.hidden = !show; if (show) seen.add(tr.dataset.group);
+  }
+  for (const g of $("rows").querySelectorAll("tr.group")) g.hidden = !seen.has(g.dataset.group);
+}
+
+function repaint() { for (const b of $("rows").querySelectorAll("td.l button")) b.paint(); refreshBar(); }
+
+$("done").onclick = async () => {
+  const body = Object.fromEntries(Object.entries(pending).map(([v, s]) => [v, LANGS.filter(l => s.has(l))]));
+  $("done").disabled = true; $("msg").textContent = "Saving…";
+  try {
+    const r = await fetch(API + "/api/approved", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || `Server error ${r.status}`); }
+    approved = await r.json(); const n = nPending(); pending = {};
+    repaint(); $("msg").textContent = `Saved ${n} approval${n > 1 ? "s" : ""}.`;
+  } catch (e) { $("msg").textContent = "Not saved: " + e.message; refreshBar(); }
+};
+$("undo").onclick = () => { pending = {}; repaint(); };
+$("q").oninput = filter;
+window.addEventListener("beforeunload", e => { if (nPending()) { e.preventDefault(); e.returnValue = ""; } });
+
+(async () => {
+  try {
+    const [voices, ok] = await Promise.all([fetch(API + "/api/voices").then(r => r.json()), fetch(API + "/api/approved").then(r => r.json())]);
+    approved = ok; build(voices); refreshBar();
+  } catch (e) { $("msg").textContent = "Server not reachable: " + e.message; }
+})();
+</script>
+</body>
+</html>

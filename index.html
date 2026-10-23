@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kanth TTS</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e1dc;
+    --accent: #2f5bd3; --accent-text: #ffffff; --chip: #f0efea; --chip-hover: #e5e4de; --error: #b42318; --ok: #1f7a4d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --text: #ecebe6; --muted: #9c9b95; --line: #33332f;
+      --accent: #7c9cf5; --accent-text: #10172b; --chip: #2a2a27; --chip-hover: #34342f; --error: #f97066; --ok: #4ccf8e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .badge { font-size: 13px; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 140px; gap: 12px; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  select, textarea { width: 100%; font: inherit; color: var(--text); background: var(--panel);
+                     border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { min-height: 170px; resize: vertical; font-size: 16px; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .emo-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--chip); color: var(--text);
+          border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  .chip:hover { background: var(--chip-hover); }
+  .chip.sel { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .seg { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; color: var(--muted); }
+  .seg .chip { padding: 3px 10px; font-size: 13px; }
+  .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .primary { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 10px 22px; cursor: pointer;
+             background: var(--accent); color: var(--accent-text); }
+  .primary:disabled { opacity: .55; cursor: wait; }
+  .ghost { font: inherit; font-size: 14px; border: 1px solid var(--line); background: transparent; color: var(--text);
+           border-radius: 8px; padding: 9px 14px; cursor: pointer; }
+  #status { font-size: 14px; color: var(--muted); }
+  #status.err { color: var(--error); }
+  audio { width: 100%; margin-top: 8px; }
+  .result-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 14px; }
+  .result-meta a { color: var(--accent); }
+  .hist { list-style: none; margin: 0; padding: 0; }
+  .hist li { border-top: 1px solid var(--line); padding: 10px 0; }
+  .hist li:first-child { border-top: 0; }
+  .hist .t { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+  .hist .m { font-size: 12px; color: var(--muted); }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .voice-info { font-size: 13px; color: var(--muted); margin-top: 6px; min-height: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Kanth TTS</h1>
+    <span class="badge"><span id="badge">connecting…</span><span id="trackerLink" hidden> · <a href="tracker.html" style="color:var(--accent)">Voice tracker</a></span></span>
+  </header>
+
+  <section class="panel">
+    <div class="row">
+      <div>
+        <label for="voice">Voice</label>
+        <select id="voice"></select>
+        <div class="voice-info" id="voiceInfo"></div>
+      </div>
+      <div>
+        <label for="lang">Language</label>
+        <select id="lang"></select>
+        <div class="voice-info" id="langInfo"></div>
+      </div>
+      <div>
+        <label for="speed">Speed</label>
+        <select id="speed">
+          <option value="">default</option>
+          <option value="0.8">0.8 (slower)</option>
+          <option value="0.9">0.9</option>
+          <option value="1.0">1.0</option>
+          <option value="1.1">1.1</option>
+          <option value="1.2">1.2 (faster)</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="emo-head">
+      <label style="margin:0">Emotions <span class="hint">(click to insert the tag at the cursor)</span></label>
+      <div class="seg" id="intensity">intensity
+        <button class="chip sel" data-v="">default</button>
+        <button class="chip" data-v="1.0">1.0</button>
+        <button class="chip" data-v="1.5">1.5</button>
+        <button class="chip" data-v="2.0">2.0</button>
+      </div>
+    </div>
+    <div class="chips" id="emotions"></div>
+
+    <div style="margin-top:14px">
+      <label for="text">Text</label>
+      <textarea id="text" placeholder="[calm] I got the letter this morning. [joy] We actually won the tickets!"></textarea>
+      <div class="hint">A tag applies until the next tag. Text without a tag is spoken calm. Ctrl + Enter to generate.</div>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="go">Generate speech</button>
+      <button class="ghost" id="clear">Clear text</button>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <section class="panel" id="resultPanel" hidden>
+    <div class="result-meta"><span id="resultInfo"></span><a id="download" download>Download WAV</a></div>
+    <audio id="player" controls></audio>
+  </section>
+
+  <section class="panel" id="histPanel" hidden>
+    <h2>Earlier in this session</h2>
+    <ul class="hist" id="hist"></ul>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const API = (window.KANTH_API || "").replace(/\/+$/, "");   // backend address (config.js); "" = same server
+let LANGS = {}, VOICES = [], intensity = "";
+
+function langOptions(v) {
+  const keep = $("lang").value;
+  $("lang").innerHTML = "";
+  for (const [code, name] of Object.entries(LANGS)) {
+    const trained = v.langs.includes(code);
+    const o = new Option(trained ? `${name} ✓` : `${name} (not trained for this voice)`, code);
+    $("lang").add(o);
+  }
+  $("lang").value = v.langs.includes(keep) ? keep : (v.langs[0] || keep || "en");
+  langInfo();
+}
+function langInfo() {
+  const v = VOICES.find(x => x.name === $("voice").value);
+  $("langInfo").textContent = v && !v.langs.includes($("lang").value)
+    ? "This voice was not trained in this language: weaker accent or clarity." : "";
+}
+function voiceChanged() {
+  const v = VOICES.find(x => x.name === $("voice").value);
+  if (!v) return;
+  const g = v.gender === "F" ? "female" : v.gender === "M" ? "male" : "neutral";
+  const l = v.langs.length ? v.langs.map(c => LANGS[c]).join(", ") : "not in current training data";
+  $("voiceInfo").textContent = `${g} · ${v.desc} · trained: ${l}`;
+  langOptions(v);
+  try { localStorage.setItem("kanth.voice", v.name); } catch (e) {}
+}
+
+function insertTag(tag) {
+  const ta = $("text"), s = ta.selectionStart, e = ta.selectionEnd, before = ta.value.slice(0, s), after = ta.value.slice(e);
+  const t = tag === "calm" || !intensity ? `[${tag}]` : `[${tag}@${intensity}]`;
+  const ins = (before && !/\s$/.test(before) ? " " : "") + t + " ";
+  ta.value = before + ins + after.replace(/^ +/, "");
+  const pos = before.length + ins.length;
+  ta.focus(); ta.setSelectionRange(pos, pos);
+}
+
+function setStatus(msg, err) { $("status").textContent = msg; $("status").className = err ? "err" : ""; }
+
+async function generate() {
+  const text = $("text").value.trim();
+  if (!text) { setStatus("Write some text first.", true); return; }
+  const body = { text, speaker: $("voice").value, lang: $("lang").value };
+  if ($("speed").value) body.speed = parseFloat($("speed").value);
+  $("go").disabled = true; setStatus("Generating…");
+  const t0 = performance.now();
+  try {
+    const r = await fetch(API + "/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || `Server error ${r.status}`); }
+    const blob = await r.blob(), url = URL.createObjectURL(blob);
+    const gen = parseFloat(r.headers.get("X-Gen-Seconds")), au = parseFloat(r.headers.get("X-Audio-Seconds"));
+    const file = r.headers.get("X-File") || "kanth.wav";
+    const info = `${au.toFixed(2)} s of speech in ${gen.toFixed(2)} s (${(au / gen).toFixed(1)}× faster than real time)`;
+    $("player").src = url; $("player").play().catch(() => {});
+    $("download").href = url; $("download").download = file;
+    $("resultInfo").textContent = `${body.speaker} · ${LANGS[body.lang]} · ${info}`;
+    $("resultPanel").hidden = false;
+    addHistory(body, url, file, info);
+    setStatus(`Done in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+  } catch (e) {
+    setStatus(e.message, true);
+  } finally { $("go").disabled = false; }
+}
+
+function addHistory(body, url, file, info) {
+  const li = document.createElement("li");
+  const t = document.createElement("div"); t.className = "t"; t.textContent = body.text;
+  const m = document.createElement("div"); m.className = "m";
+  m.textContent = `${body.speaker} · ${LANGS[body.lang]}${body.speed ? " · speed " + body.speed : ""} · ${info} · ${file}`;
+  const a = document.createElement("audio"); a.controls = true; a.src = url;
+  li.append(t, m, a);
+  $("hist").prepend(li);
+  while ($("hist").children.length > 10) $("hist").lastChild.remove();
+  $("histPanel").hidden = false;
+}
+
+async function init() {
+  try {
+    const [info, voices, emos] = await Promise.all(["/api/info", "/api/voices", "/api/emotions"].map(u => fetch(API + u).then(r => r.json())));
+    LANGS = info.languages; VOICES = voices;
+    $("badge").textContent = `${info.device} · ${info.model}`;
+    $("trackerLink").hidden = !info.tracker;
+    const groups = {};
+    for (const v of voices) {
+      if (!groups[v.group]) { groups[v.group] = document.createElement("optgroup"); groups[v.group].label = v.group; $("voice").append(groups[v.group]); }
+      const langs = v.langs.length ? v.langs.map(c => LANGS[c]).join(", ") : "–";
+      groups[v.group].append(new Option(v.group === "Named voices" ? `${v.name} (${v.gender} · ${langs})` : v.name, v.name));
+    }
+    let saved = null; try { saved = localStorage.getItem("kanth.voice"); } catch (e) {}
+    $("voice").value = voices.some(v => v.name === saved) ? saved : "Bea";
+    voiceChanged();
+    for (const e of emos) {
+      const b = document.createElement("button"); b.className = "chip"; b.textContent = e.label; b.title = e.aliases;
+      b.onclick = () => insertTag(e.tag);
+      $("emotions").append(b);
+    }
+  } catch (e) { $("badge").textContent = "server not reachable"; setStatus(e.message, true); }
+}
+
+$("voice").onchange = voiceChanged;
+$("lang").onchange = langInfo;
+$("go").onclick = generate;
+$("clear").onclick = () => { $("text").value = ""; $("text").focus(); };
+$("text").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); generate(); } });
+for (const b of $("intensity").querySelectorAll("button")) b.onclick = () => {
+  intensity = b.dataset.v;
+  $("intensity").querySelectorAll("button").forEach(x => x.classList.toggle("sel", x === b));
+};
+init();
+</script>
+</body>
+</html>
