@@ -158,7 +158,7 @@ window.addEventListener("beforeunload", e => { if (nPending()) { e.preventDefaul
 
 (async () => {
   try {
-    const [voices, ok] = await Promise.all([fetch(API + "/api/voices").then(r => r.json()), fetch(API + "/api/approved").then(r => r.json())]);
+    const [voices, ok] = await Promise.all([fetch(API + "/api/voices?all=1").then(r => r.json()), fetch(API + "/api/approved").then(r => r.json())]);
     approved = ok; build(voices); refreshBar();
   } catch (e) { $("msg").textContent = "Server not reachable: " + e.message; }
 })();

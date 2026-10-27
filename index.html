@@ -23,12 +23,13 @@
   h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
   .badge { font-size: 13px; color: var(--muted); }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr 140px; gap: 12px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
   label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
   select, textarea { width: 100%; font: inherit; color: var(--text); background: var(--panel);
                      border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
   select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  select:disabled { opacity: 1; color: var(--text); background: var(--chip); cursor: default; }
   textarea { min-height: 170px; resize: vertical; font-size: 16px; }
   .hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
   .emo-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -71,23 +72,10 @@
       <div>
         <label for="voice">Voice</label>
         <select id="voice"></select>
-        <div class="voice-info" id="voiceInfo"></div>
       </div>
       <div>
         <label for="lang">Language</label>
         <select id="lang"></select>
-        <div class="voice-info" id="langInfo"></div>
-      </div>
-      <div>
-        <label for="speed">Speed</label>
-        <select id="speed">
-          <option value="">default</option>
-          <option value="0.8">0.8 (slower)</option>
-          <option value="0.9">0.9</option>
-          <option value="1.0">1.0</option>
-          <option value="1.1">1.1</option>
-          <option value="1.2">1.2 (faster)</option>
-        </select>
       </div>
     </div>
   </section>
@@ -95,12 +83,6 @@
   <section class="panel">
     <div class="emo-head">
       <label style="margin:0">Emotions <span class="hint">(click to insert the tag at the cursor)</span></label>
-      <div class="seg" id="intensity">intensity
-        <button class="chip sel" data-v="">default</button>
-        <button class="chip" data-v="1.0">1.0</button>
-        <button class="chip" data-v="1.5">1.5</button>
-        <button class="chip" data-v="2.0">2.0</button>
-      </div>
     </div>
     <div class="chips" id="emotions"></div>
 
@@ -132,37 +114,27 @@
 <script>
 const $ = id => document.getElementById(id);
 const API = (window.KANTH_API || "").replace(/\/+$/, "");   // backend address (config.js); "" = same server
-let LANGS = {}, VOICES = [], intensity = "";
+let LANGS = {}, VOICES = [];
 
+// language dropdown = only the languages approved for this voice (from the backend's ship list), first one selected;
+// a voice with a single language shows it fixed (the dropdown cannot be opened)
 function langOptions(v) {
   const keep = $("lang").value;
   $("lang").innerHTML = "";
-  for (const [code, name] of Object.entries(LANGS)) {
-    const trained = v.langs.includes(code);
-    const o = new Option(trained ? `${name} ✓` : `${name} (not trained for this voice)`, code);
-    $("lang").add(o);
-  }
-  $("lang").value = v.langs.includes(keep) ? keep : (v.langs[0] || keep || "en");
-  langInfo();
-}
-function langInfo() {
-  const v = VOICES.find(x => x.name === $("voice").value);
-  $("langInfo").textContent = v && !v.langs.includes($("lang").value)
-    ? "This voice was not trained in this language: weaker accent or clarity." : "";
+  for (const code of v.langs) $("lang").add(new Option(LANGS[code] || code, code));
+  $("lang").value = v.langs.includes(keep) ? keep : v.langs[0];
+  $("lang").disabled = v.langs.length < 2;
 }
 function voiceChanged() {
   const v = VOICES.find(x => x.name === $("voice").value);
   if (!v) return;
-  const g = v.gender === "F" ? "female" : v.gender === "M" ? "male" : "neutral";
-  const l = v.langs.length ? v.langs.map(c => LANGS[c]).join(", ") : "not in current training data";
-  $("voiceInfo").textContent = `${g} · ${v.desc} · trained: ${l}`;
   langOptions(v);
   try { localStorage.setItem("kanth.voice", v.name); } catch (e) {}
 }
 
 function insertTag(tag) {
   const ta = $("text"), s = ta.selectionStart, e = ta.selectionEnd, before = ta.value.slice(0, s), after = ta.value.slice(e);
-  const t = tag === "calm" || !intensity ? `[${tag}]` : `[${tag}@${intensity}]`;
+  const t = `[${tag}]`;
   const ins = (before && !/\s$/.test(before) ? " " : "") + t + " ";
   ta.value = before + ins + after.replace(/^ +/, "");
   const pos = before.length + ins.length;
@@ -175,7 +147,6 @@ async function generate() {
   const text = $("text").value.trim();
   if (!text) { setStatus("Write some text first.", true); return; }
   const body = { text, speaker: $("voice").value, lang: $("lang").value };
-  if ($("speed").value) body.speed = parseFloat($("speed").value);
   $("go").disabled = true; setStatus("Generating…");
   const t0 = performance.now();
   try {
@@ -200,7 +171,7 @@ function addHistory(body, url, file, info) {
   const li = document.createElement("li");
   const t = document.createElement("div"); t.className = "t"; t.textContent = body.text;
   const m = document.createElement("div"); m.className = "m";
-  m.textContent = `${body.speaker} · ${LANGS[body.lang]}${body.speed ? " · speed " + body.speed : ""} · ${info} · ${file}`;
+  m.textContent = `${body.speaker} · ${LANGS[body.lang]} · ${info} · ${file}`;
   const a = document.createElement("audio"); a.controls = true; a.src = url;
   li.append(t, m, a);
   $("hist").prepend(li);
@@ -214,14 +185,9 @@ async function init() {
     LANGS = info.languages; VOICES = voices;
     $("badge").textContent = `${info.device} · ${info.model}`;
     $("trackerLink").hidden = !info.tracker;
-    const groups = {};
-    for (const v of voices) {
-      if (!groups[v.group]) { groups[v.group] = document.createElement("optgroup"); groups[v.group].label = v.group; $("voice").append(groups[v.group]); }
-      const langs = v.langs.length ? v.langs.map(c => LANGS[c]).join(", ") : "–";
-      groups[v.group].append(new Option(v.group === "Named voices" ? `${v.name} (${v.gender} · ${langs})` : v.name, v.name));
-    }
+    for (const v of voices) $("voice").add(new Option(v.gender === "F" || v.gender === "M" ? `${v.name} (${v.gender})` : v.name, v.name));
     let saved = null; try { saved = localStorage.getItem("kanth.voice"); } catch (e) {}
-    $("voice").value = voices.some(v => v.name === saved) ? saved : "Bea";
+    $("voice").value = voices.some(v => v.name === saved) ? saved : voices[0].name;
     voiceChanged();
     for (const e of emos) {
       const b = document.createElement("button"); b.className = "chip"; b.textContent = e.label; b.title = e.aliases;
@@ -232,14 +198,9 @@ async function init() {
 }
 
 $("voice").onchange = voiceChanged;
-$("lang").onchange = langInfo;
 $("go").onclick = generate;
 $("clear").onclick = () => { $("text").value = ""; $("text").focus(); };
 $("text").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); generate(); } });
-for (const b of $("intensity").querySelectorAll("button")) b.onclick = () => {
-  intensity = b.dataset.v;
-  $("intensity").querySelectorAll("button").forEach(x => x.classList.toggle("sel", x === b));
-};
 init();
 </script>
 </body>
